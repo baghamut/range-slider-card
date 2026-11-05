@@ -1,16 +1,37 @@
 /*
  * Range Slider Card for Home Assistant
  * A slider with two handles that sets two entities at once: a start and an end.
- * Works with number-like entities (input_number, number) and time entities
- * (time, input_datetime with time only). Type: custom:range-slider-card
- * https://github.com/baghamut/range-slider-card  ·  MIT License
+ * Entities: numbers (input_number, number), times (time, input_datetime with time only)
+ * and dates (date, input_datetime with date only). Values can be shown as a number with
+ * any unit, or as one of the common kinds: time of day, duration, temperature, percent…
+ * Type: custom:range-slider-card · https://github.com/baghamut/range-slider-card · MIT License
  */
-const CARD_VERSION = '0.1.0';
+const CARD_VERSION = '0.2.0';
 
 const NUMBER_DOMAINS = ['input_number', 'number'];
-const TIME_DOMAINS = ['time', 'input_datetime'];
-const ENTITY_DOMAINS = [...NUMBER_DOMAINS, ...TIME_DOMAINS];
-const DAY = 1440; // minutes
+const ENTITY_DOMAINS = [...NUMBER_DOMAINS, 'time', 'date', 'input_datetime'];
+const DAY = 1440; // minutes in a day
+const MS_DAY = 86400000;
+
+// How a value is shown. `unit` is the default unit (the entity's own unit wins for "number").
+// Formats marked `minutes` work on number entities that hold minutes.
+const FORMATS = {
+  number: { label: 'Number (unit from the entity or typed below)' },
+  time: { label: 'Time of day (HH:MM)', minutes: true },
+  duration: { label: 'Duration (h / min)', minutes: true },
+  date: { label: 'Date' },
+  temperature: { label: 'Temperature', unit: '°C' },
+  percentage: { label: 'Percent', unit: '%' },
+  distance: { label: 'Distance', unit: 'km' },
+  length: { label: 'Length', unit: 'm' },
+  speed: { label: 'Speed', unit: 'km/h' },
+  power: { label: 'Power', unit: 'W' },
+  energy: { label: 'Energy', unit: 'kWh' },
+  volume: { label: 'Volume', unit: 'L' },
+  weight: { label: 'Weight', unit: 'kg' },
+  pressure: { label: 'Pressure', unit: 'bar' },
+  currency: { label: 'Money (currency from Home Assistant)' },
+};
 
 // Named colours from Home Assistant's colour picker (ui_color selector)
 const HA_COLORS = ['primary', 'accent', 'red', 'pink', 'purple', 'deep-purple', 'indigo', 'blue',
@@ -25,14 +46,19 @@ const cssColor = (c) => {
 const fireEvent = (node, type, detail) =>
   node.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: true }));
 
-// What kind of value an entity holds: 'number', 'time' or null (unsupported)
+// What an entity holds: 'number', 'time', 'date' or null (unsupported)
 const kindOf = (hass, entityId) => {
   const st = entityId && hass?.states[entityId];
   if (!st) return null;
   const domain = entityId.split('.')[0];
   if (NUMBER_DOMAINS.includes(domain)) return 'number';
   if (domain === 'time') return 'time';
-  if (domain === 'input_datetime') return st.attributes.has_time && !st.attributes.has_date ? 'time' : null;
+  if (domain === 'date') return 'date';
+  if (domain === 'input_datetime') {
+    const { has_time: t, has_date: d } = st.attributes;
+    if (t && !d) return 'time';
+    if (d && !t) return 'date';
+  }
   return null;
 };
 
@@ -44,6 +70,12 @@ const formatTime = (min) => {
   const m = Math.max(0, Math.min(DAY, Math.round(min)));
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 };
+// Dates are kept as whole days since 1970-01-01 (UTC), so the slider math stays simple
+const parseDate = (s) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || '');
+  return m ? Math.round(Date.UTC(+m[1], +m[2] - 1, +m[3]) / MS_DAY) : NaN;
+};
+const isoDate = (days) => new Date(Math.round(days) * MS_DAY).toISOString().slice(0, 10);
 const decimalsOf = (step) => {
   const s = String(step);
   return s.includes('.') ? s.split('.')[1].length : 0;
@@ -63,6 +95,7 @@ class RangeSliderCard extends HTMLElement {
     this._local = null; // values shown while dragging / until the entities report back
     if (!this.shadowRoot) this.attachShadow({ mode: 'open' });
     this._built = false;
+    this._scaleKey = null;
     this._update();
   }
 
@@ -76,32 +109,52 @@ class RangeSliderCard extends HTMLElement {
 
   // ---- model ---------------------------------------------------------------
 
-  // 'number', 'time' (time entities) or 'minutes' (number entities shown as a time of day)
+  // What both entities hold: 'number', 'time' or 'date' (null if they differ or are unsupported)
   _kind() {
     const a = kindOf(this._hass, this._config.start_entity);
     const b = kindOf(this._hass, this._config.end_entity);
-    if (!a || a !== b) return null;
-    return a === 'number' && this._config.format === 'time' ? 'minutes' : a;
+    return a && a === b ? a : null;
   }
 
-  _range(kind) {
+  // How to show the values. Time entities are always times, date entities always dates.
+  _format(kind) {
+    if (kind === 'time') return this._config.format === 'duration' ? 'duration' : 'time';
+    if (kind === 'date') return 'date';
+    const f = this._config.format;
+    return f && FORMATS[f] && f !== 'date' ? f : 'number';
+  }
+
+  _range(kind, fmt) {
     const c = this._config;
     const attr = this._hass.states[c.start_entity]?.attributes || {};
-    if (kind === 'minutes') {
-      const step = Number(c.step ?? attr.step ?? 15) || 15;
-      return { min: Number(c.min ?? attr.min ?? 0), max: Number(c.max ?? attr.max ?? DAY), step };
+    if (kind === 'date') {
+      const year = new Date().getUTCFullYear();
+      const min = parseDate(c.min) || Math.round(Date.UTC(year, 0, 1) / MS_DAY);
+      const max = parseDate(c.max) || Math.round(Date.UTC(year, 11, 31) / MS_DAY);
+      return { min, max, step: Number(c.step) || 1 };
     }
     if (kind === 'time') {
-      const step = Number(c.step) || 15;
-      return { min: Number(c.min ?? 0), max: Number(c.max ?? DAY), step };
+      return { min: Number(c.min ?? 0), max: Number(c.max ?? DAY), step: Number(c.step) || 15 };
     }
-    const step = Number(c.step ?? attr.step ?? 1) || 1;
-    return { min: Number(c.min ?? attr.min ?? 0), max: Number(c.max ?? attr.max ?? 100), step };
+    if (FORMATS[fmt].minutes) {
+      return {
+        min: Number(c.min ?? attr.min ?? 0),
+        max: Number(c.max ?? attr.max ?? DAY),
+        step: Number(c.step ?? attr.step ?? 15) || 15,
+      };
+    }
+    return {
+      min: Number(c.min ?? attr.min ?? 0),
+      max: Number(c.max ?? attr.max ?? 100),
+      step: Number(c.step ?? attr.step ?? 1) || 1,
+    };
   }
 
   _read(kind, entityId) {
     const s = this._hass.states[entityId]?.state;
-    return kind === 'time' ? parseTime(s) : parseFloat(s);
+    if (kind === 'time') return parseTime(s);
+    if (kind === 'date') return parseDate(s);
+    return parseFloat(s);
   }
 
   _values(kind) {
@@ -114,11 +167,37 @@ class RangeSliderCard extends HTMLElement {
     return this._local || { a, b };
   }
 
-  _fmt(kind, v, step) {
+  _unit(fmt) {
+    const c = this._config;
+    if (c.unit !== undefined && c.unit !== null) return String(c.unit);
+    if (fmt === 'currency') return this._hass.config?.currency || '';
+    const entityUnit = this._hass.states[c.start_entity]?.attributes.unit_of_measurement;
+    return entityUnit || FORMATS[fmt].unit || '';
+  }
+
+  _lang() { return this._hass.locale?.language || this._hass.language || navigator.language; }
+
+  // Text for a value; `short` is used for the scale (no unit, compact)
+  _fmt(fmt, v, step, short = false) {
     if (!Number.isFinite(v)) return '—';
-    if (kind !== 'number') return formatTime(v);
-    const unit = this._hass.states[this._config.start_entity]?.attributes.unit_of_measurement;
-    return `${v.toFixed(decimalsOf(step))}${unit ? ` ${unit}` : ''}`;
+    if (fmt === 'time') return formatTime(v);
+    if (fmt === 'duration') {
+      const m = Math.round(v);
+      const h = Math.floor(m / 60);
+      const rest = m % 60;
+      if (short) return rest ? `${h}:${String(rest).padStart(2, '0')}` : `${h} h`;
+      if (!h) return `${rest} min`;
+      return rest ? `${h} h ${rest} min` : `${h} h`;
+    }
+    if (fmt === 'date') {
+      return new Intl.DateTimeFormat(this._lang(), { day: 'numeric', month: 'short', timeZone: 'UTC' })
+        .format(new Date(Math.round(v) * MS_DAY));
+    }
+    const dec = decimalsOf(step);
+    const num = new Intl.NumberFormat(this._lang(), { minimumFractionDigits: short ? 0 : dec, maximumFractionDigits: dec })
+      .format(v);
+    const unit = this._unit(fmt);
+    return short || !unit ? num : `${num} ${unit}`;
   }
 
   async _write(kind, a, b) {
@@ -131,6 +210,12 @@ class RangeSliderCard extends HTMLElement {
         return domain === 'time'
           ? this._hass.callService('time', 'set_value', { entity_id: entityId, time })
           : this._hass.callService('input_datetime', 'set_datetime', { entity_id: entityId, time });
+      }
+      if (kind === 'date') {
+        const date = isoDate(v);
+        return domain === 'date'
+          ? this._hass.callService('date', 'set_value', { entity_id: entityId, date })
+          : this._hass.callService('input_datetime', 'set_datetime', { entity_id: entityId, date });
       }
       return this._hass.callService(domain, 'set_value', { entity_id: entityId, value: v });
     };
@@ -163,10 +248,22 @@ class RangeSliderCard extends HTMLElement {
         .thumb { position: absolute; top: 50%; width: 20px; height: 20px; margin: -10px 0 0 -10px;
                  border-radius: 50%; background: var(--rs-color); cursor: grab; outline: none; touch-action: none; }
         .thumb::after { content: ''; position: absolute; inset: -10px; } /* bigger touch target */
-        .thumb:focus-visible, .thumb.active { box-shadow: 0 0 0 8px color-mix(in srgb, var(--rs-color) 20%, transparent); }
+        .thumb.kbd, .thumb.active { box-shadow: 0 0 0 8px color-mix(in srgb, var(--rs-color) 20%, transparent); }
         .thumb.active { cursor: grabbing; }
-        .scale { position: relative; height: 14px; margin: 4px 10px 0; font-size: 11px; color: var(--secondary-text-color); }
-        .scale span { position: absolute; transform: translateX(-50%); }
+        /* Ruler: small ticks under the track, longer ones at the labels */
+        .ruler { position: relative; height: 6px; margin: 3px 10px 0; }
+        .ruler i { position: absolute; top: 0; width: 1px; height: 3px; background: var(--divider-color, rgba(127,127,127,.4)); }
+        .ruler i.major { height: 6px; background: var(--secondary-text-color); opacity: .6; }
+        .scale { position: relative; height: 14px; margin: 1px 10px 0; font-size: 11px; color: var(--secondary-text-color); }
+        .scale span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+        /* Bubble with the exact value above a handle while it moves or has keyboard focus */
+        .bub { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%) scale(.6);
+               transform-origin: bottom center; padding: 3px 8px; border-radius: 6px; white-space: nowrap;
+               font-size: 13px; font-weight: 500; color: var(--text-primary-color, #fff);
+               background: var(--rs-bubble, #424242); opacity: 0; pointer-events: none;
+               transition: opacity .12s, transform .12s; font-variant-numeric: tabular-nums; z-index: 2; }
+        .thumb.active .bub, .thumb.kbd .bub { opacity: 1; transform: translateX(-50%) scale(1); }
+        .track { z-index: 1; }
         /* style: gradient — thick track, colour gradient between the handles, white handles with a ring */
         .gradient .track { height: 22px; }
         .gradient .track::before { top: 4px; height: 14px; border-radius: 7px;
@@ -176,7 +273,7 @@ class RangeSliderCard extends HTMLElement {
         .gradient .thumb { width: 22px; height: 22px; margin: -11px 0 0 -11px; background: #fff; box-sizing: border-box;
                            border: 3px solid var(--rs-color); box-shadow: 0 1px 3px rgba(0,0,0,.35); }
         .gradient .thumb[data-t="b"] { border-color: var(--rs-color2); }
-        .gradient .thumb:focus-visible, .gradient .thumb.active {
+        .gradient .thumb.kbd, .gradient .thumb.active {
           box-shadow: 0 1px 3px rgba(0,0,0,.35), 0 0 0 8px color-mix(in srgb, var(--rs-color) 20%, transparent); }
         .warn { color: var(--error-color); font-size: 13px; padding: 4px 0; }
         .off .track, .off .scale { opacity: .4; pointer-events: none; }
@@ -189,9 +286,10 @@ class RangeSliderCard extends HTMLElement {
         </div>
         <div class="track">
           <div class="bar"></div>
-          <div class="thumb" data-t="a" role="slider" tabindex="0"></div>
-          <div class="thumb" data-t="b" role="slider" tabindex="0"></div>
+          <div class="thumb" data-t="a" role="slider" tabindex="0"><span class="bub"></span></div>
+          <div class="thumb" data-t="b" role="slider" tabindex="0"><span class="bub"></span></div>
         </div>
+        <div class="ruler"></div>
         <div class="scale"></div>
         <div class="warn" hidden></div>
       </ha-card>`;
@@ -199,9 +297,13 @@ class RangeSliderCard extends HTMLElement {
     this._el = {
       card: $('ha-card'), icon: $('.icon'), name: $('.name'), val: $('.val'), track: $('.track'),
       bar: $('.bar'), ta: $('.thumb[data-t="a"]'), tb: $('.thumb[data-t="b"]'), scale: $('.scale'), warn: $('.warn'),
+      ruler: $('.ruler'),
     };
     this._el.track.addEventListener('pointerdown', (e) => this._pointerDown(e));
-    [this._el.ta, this._el.tb].forEach((t) => t.addEventListener('keydown', (e) => this._key(e, t.dataset.t)));
+    [this._el.ta, this._el.tb].forEach((t) => {
+      t.addEventListener('keydown', (e) => this._key(e, t.dataset.t));
+      t.addEventListener('blur', () => t.classList.remove('kbd'));
+    });
     this._built = true;
   }
 
@@ -226,14 +328,15 @@ class RangeSliderCard extends HTMLElement {
     if (!kind) {
       warn = !startState || !this._hass.states[c.end_entity]
         ? 'Entity not found'
-        : 'Both entities must be numbers (input_number, number) or times (time, input_datetime)';
+        : 'Both entities must be the same kind: numbers (input_number, number), times (time, input_datetime) or dates (date, input_datetime)';
     }
     el.warn.hidden = !warn;
     el.warn.textContent = warn;
     el.card.classList.toggle('off', !kind);
     if (!kind) { el.val.textContent = ''; return; }
 
-    const r = this._range(kind);
+    const fmt = this._format(kind);
+    const r = this._range(kind, fmt);
     const { a, b } = this._values(kind);
     const pct = (v) => ((Math.max(r.min, Math.min(r.max, v)) - r.min) / (r.max - r.min)) * 100;
     const ok = Number.isFinite(a) && Number.isFinite(b);
@@ -243,33 +346,45 @@ class RangeSliderCard extends HTMLElement {
     el.bar.style.width = `${Math.max(0, R - L)}%`;
     el.ta.style.left = `${L}%`;
     el.tb.style.left = `${R}%`;
-    el.val.textContent = ok ? `${this._fmt(kind, a, r.step)} – ${this._fmt(kind, b, r.step)}` : '—';
+    el.val.textContent = ok ? `${this._fmt(fmt, a, r.step)} – ${this._fmt(fmt, b, r.step)}` : '—';
     [[el.ta, a, 'Start'], [el.tb, b, 'End']].forEach(([t, v, label]) => {
       t.setAttribute('aria-label', label);
       t.setAttribute('aria-valuemin', r.min);
       t.setAttribute('aria-valuemax', r.max);
       t.setAttribute('aria-valuenow', v);
-      t.setAttribute('aria-valuetext', this._fmt(kind, v, r.step));
+      const text = this._fmt(fmt, v, r.step);
+      t.setAttribute('aria-valuetext', text);
+      t.firstElementChild.textContent = text;
     });
 
-    const scaleKey = `${kind}|${r.min}|${r.max}|${c.show_scale}`;
+    const scaleKey = `${fmt}|${r.min}|${r.max}|${r.step}|${c.show_scale}|${c.show_ticks}`;
     if (this._scaleKey !== scaleKey) {
       this._scaleKey = scaleKey;
       el.scale.hidden = !c.show_scale;
-      const isTime = kind !== 'number';
-      const ticks = isTime && r.min === 0 && r.max === DAY
+      el.ruler.hidden = c.show_ticks === false;
+      const fullDay = (fmt === 'time' || fmt === 'duration') && r.min === 0 && r.max === DAY;
+      const labels = fullDay
         ? [0, 360, 720, 1080, 1440]
         : [0, 0.25, 0.5, 0.75, 1].map((f) => r.min + f * (r.max - r.min));
-      el.scale.innerHTML = ticks.map((v) => {
-        const label = isTime ? (r.min === 0 && r.max === DAY ? String(Math.round(v / 60)) : formatTime(v))
-          : String(+v.toFixed(decimalsOf(r.step)));
+      el.scale.innerHTML = labels.map((v) => {
+        const label = fullDay ? String(v / 60) : this._fmt(fmt, v, r.step, true);
         return `<span style="left:${pct(v)}%">${label}</span>`;
+      }).join('');
+      // Small ticks: every hour for a whole day, otherwise every step if that is not too dense, else 20 parts
+      const span = r.max - r.min;
+      let minor = fullDay ? 60 : r.step;
+      if (!fullDay && span / minor > 48) minor = span / 20;
+      const n = Math.round(span / minor);
+      const majors = new Set(labels.map((v) => Math.round(pct(v) * 100)));
+      el.ruler.innerHTML = Array.from({ length: n + 1 }, (_, i) => {
+        const p = (i / n) * 100;
+        return `<i class="${majors.has(Math.round(p * 100)) ? 'major' : ''}" style="left:${p}%"></i>`;
       }).join('');
     }
   }
 
   _clamp(kind, which, v, cur) {
-    const r = this._range(kind);
+    const r = this._range(kind, this._format(kind));
     const gap = Number(this._config.min_gap ?? r.step);
     v = Math.round((v - r.min) / r.step) * r.step + r.min;
     v = +v.toFixed(10);
@@ -281,7 +396,7 @@ class RangeSliderCard extends HTMLElement {
     const kind = this._kind();
     if (!kind || e.button > 0) return;
     e.preventDefault();
-    const r = this._range(kind);
+    const r = this._range(kind, this._format(kind));
     const { a, b } = this._values(kind);
     if (!Number.isFinite(a) || !Number.isFinite(b)) return;
     const cur = { a, b };
@@ -297,6 +412,8 @@ class RangeSliderCard extends HTMLElement {
       which = Math.abs(v - a) <= Math.abs(v - b) ? 'a' : 'b';
     }
     const thumb = which === 'a' ? this._el.ta : this._el.tb;
+    this._el.ta.classList.remove('kbd');
+    this._el.tb.classList.remove('kbd');
     thumb.classList.add('active');
     thumb.focus({ preventScroll: true });
     track.setPointerCapture(e.pointerId);
@@ -326,10 +443,11 @@ class RangeSliderCard extends HTMLElement {
   _key(e, which) {
     const kind = this._kind();
     if (!kind) return;
-    const r = this._range(kind);
+    const r = this._range(kind, this._format(kind));
     const steps = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1, PageDown: -10, PageUp: 10 }[e.key];
     if (!steps) return;
     e.preventDefault();
+    (which === 'a' ? this._el.ta : this._el.tb).classList.add('kbd'); // ring and bubble for keyboard use
     const cur = { ...this._values(kind) };
     cur[which] = this._clamp(kind, which, cur[which] + steps * r.step, cur);
     this._local = { ...cur, until: Infinity };
@@ -351,12 +469,35 @@ class RangeSliderCardEditor extends HTMLElement {
     else this._render();
   }
 
+  _kind() { return kindOf(this._hass, this._config.start_entity); }
+
+  // Value kinds that make sense for the picked entities
+  _formatOptions() {
+    const kind = this._kind();
+    let keys;
+    if (kind === 'time') keys = ['time', 'duration'];
+    else if (kind === 'date') keys = ['date'];
+    else keys = Object.keys(FORMATS).filter((k) => k !== 'date');
+    return keys.map((k) => ({ value: k, label: FORMATS[k].label }));
+  }
+
   _schema() {
+    const c = this._config;
+    const kind = this._kind();
+    const fmt = c.format || (kind === 'time' ? 'time' : kind === 'date' ? 'date' : 'number');
+    const numeric = kind === 'number' && !FORMATS[fmt]?.minutes;
     const entity = { entity: { domain: ENTITY_DOMAINS } };
+    const bound = kind === 'date' ? { date: {} } : { number: { mode: 'box', step: 'any' } };
     return [
       { name: 'start_entity', required: true, selector: entity },
       { name: 'end_entity', required: true, selector: entity },
       { name: 'name', selector: { text: {} } },
+      {
+        type: 'grid', name: '', schema: [
+          { name: 'format', selector: { select: { mode: 'dropdown', options: this._formatOptions() } } },
+          ...(numeric ? [{ name: 'unit', selector: { text: {} } }] : []),
+        ],
+      },
       { name: 'icon', selector: { icon: {} }, context: { icon_entity: 'start_entity' } },
       {
         name: 'style',
@@ -368,16 +509,15 @@ class RangeSliderCardEditor extends HTMLElement {
       {
         type: 'grid', name: '', schema: [
           { name: 'color', selector: { ui_color: { default_color: 'primary' } } },
-          ...(this._config.style === 'gradient'
-            ? [{ name: 'color_end', selector: { ui_color: { default_color: 'primary' } } }] : []),
+          ...(c.style === 'gradient' ? [{ name: 'color_end', selector: { ui_color: { default_color: 'primary' } } }] : []),
         ],
       },
       {
         type: 'expandable', name: '', title: 'Range', schema: [
           {
             type: 'grid', name: '', schema: [
-              { name: 'min', selector: { number: { mode: 'box', step: 'any' } } },
-              { name: 'max', selector: { number: { mode: 'box', step: 'any' } } },
+              { name: 'min', selector: bound },
+              { name: 'max', selector: bound },
               { name: 'step', selector: { number: { mode: 'box', step: 'any' } } },
               { name: 'min_gap', selector: { number: { mode: 'box', step: 'any' } } },
             ],
@@ -387,15 +527,9 @@ class RangeSliderCardEditor extends HTMLElement {
       {
         type: 'grid', name: '', schema: [
           { name: 'show_scale', selector: { boolean: {} } },
+          { name: 'show_ticks', selector: { boolean: {} } },
           { name: 'show_icon', selector: { boolean: {} } },
         ],
-      },
-      {
-        name: 'format',
-        selector: { select: { mode: 'dropdown', options: [
-          { value: 'number', label: 'Number' },
-          { value: 'time', label: 'Time of day (number entities hold minutes, 0–1440)' },
-        ] } },
       },
     ];
   }
@@ -408,6 +542,8 @@ class RangeSliderCardEditor extends HTMLElement {
         start_entity: 'Start entity',
         end_entity: 'End entity',
         name: 'Name',
+        format: 'Show values as',
+        unit: 'Unit',
         icon: 'Icon',
         color: this._config.style === 'gradient' ? 'Start colour' : 'Colour',
         color_end: 'End colour',
@@ -416,27 +552,32 @@ class RangeSliderCardEditor extends HTMLElement {
         max: 'Maximum',
         step: 'Step',
         min_gap: 'Minimum gap between handles',
-        show_scale: 'Show scale',
+        show_scale: 'Show scale labels',
+        show_ticks: 'Show ruler ticks',
         show_icon: 'Show icon',
-        format: 'Show numbers as',
       }[s.name] ?? s.name);
-      this._form.computeHelper = (s) => ({
-        min: 'Empty = from the entity (times: 0)',
-        max: 'Empty = from the entity (times: 1440 = 24:00)',
-        step: 'Times are in minutes (default 15)',
-      }[s.name]);
+      this._form.computeHelper = (s) => {
+        const kind = this._kind();
+        const minutes = kind === 'time' || FORMATS[this._config.format]?.minutes;
+        return {
+          unit: 'Empty = the entity\'s unit or the kind\'s usual unit',
+          min: kind === 'date' ? 'Empty = 1 January this year' : minutes ? 'Minutes; empty = 0' : 'Empty = from the entity',
+          max: kind === 'date' ? 'Empty = 31 December this year' : minutes ? 'Minutes; empty = 1440 (24:00)' : 'Empty = from the entity',
+          step: kind === 'date' ? 'Days (default 1)' : minutes ? 'Minutes (default 15)' : undefined,
+        }[s.name];
+      };
       this._form.addEventListener('value-changed', (e) => {
         const config = { ...e.detail.value };
         Object.keys(config).forEach((k) => (config[k] === '' || config[k] === undefined) && delete config[k]);
-        const styleChanged = config.style !== this._config.style;
+        const reshape = ['style', 'format', 'start_entity'].some((k) => config[k] !== this._config[k]);
         this._config = config;
-        if (styleChanged) this._form.schema = this._schema(); // show or hide "End colour"
+        if (reshape) this._form.schema = this._schema(); // fields depend on these choices
         fireEvent(this, 'config-changed', { config });
       });
       this.appendChild(this._form);
     }
     this._form.hass = this._hass;
-    this._form.data = { show_scale: true, show_icon: true, ...this._config };
+    this._form.data = { show_scale: true, show_ticks: true, show_icon: true, ...this._config };
     this._form.schema = this._schema();
   }
 }
@@ -448,7 +589,7 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: 'range-slider-card',
   name: 'Range Slider Card',
-  description: 'One slider with two handles that sets a start and an end entity (numbers or times).',
+  description: 'One slider with two handles that sets a start and an end entity: numbers, times or dates.',
   preview: true,
   documentationURL: 'https://github.com/baghamut/range-slider-card',
 });

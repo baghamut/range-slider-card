@@ -7,7 +7,7 @@
 <style>
   :root { --primary-color: #03a9f4; --rgb-primary-color: 3,169,244; --primary-text-color: #212121;
           --secondary-text-color: #727272; --disabled-color: #bdbdbd; --error-color: #db4437;
-          --deep-orange-color: #ff6f22; --teal-color: #009688; --amber-color: #ffc107; --secondary-background-color: #eeeeee; --card-background-color: #fff; }
+          --deep-orange-color: #ff6f22; --teal-color: #009688; --amber-color: #ffc107; --indigo-color: #3f51b5; --light-blue-color: #03a9f4; --green-color: #4caf50; --lime-color: #cddc39; --secondary-background-color: #eeeeee; --card-background-color: #fff; }
   body { font-family: Roboto, system-ui, sans-serif; background: #fafafa; color: var(--primary-text-color);
          margin: 0; padding: 16px; display: grid; gap: 16px; max-width: 420px; }
   ha-card { display: block; background: var(--card-background-color); border-radius: 12px;
@@ -31,14 +31,23 @@
     'input_datetime.dhw_start': { state: '06:00:00', attributes: { friendly_name: 'Hot water start', has_time: true, has_date: false } },
     'time.dhw_end': { state: '20:30:00', attributes: { friendly_name: 'Hot water end' } },
     'sensor.bad': { state: '1', attributes: {} },
+    'input_number.hum_lo': { state: '40', attributes: { friendly_name: 'Humidity low', min: 0, max: 100, step: 5 } },
+    'input_number.hum_hi': { state: '60', attributes: { friendly_name: 'Humidity high', min: 0, max: 100, step: 5 } },
+    'input_number.price_lo': { state: '2.5', attributes: { min: 0, max: 10, step: 0.5 } },
+    'input_number.price_hi': { state: '6', attributes: { min: 0, max: 10, step: 0.5 } },
+    'number.run_min': { state: '30', attributes: { min: 0, max: 240, step: 15 } },
+    'number.run_max': { state: '135', attributes: { min: 0, max: 240, step: 15 } },
+    'input_datetime.trip_from': { state: '2026-07-04', attributes: { friendly_name: 'Holiday from', has_date: true, has_time: false } },
+    'date.trip_to': { state: '2026-07-19', attributes: { friendly_name: 'Holiday to' } },
   };
   const cards = [];
   const hass = () => ({
     states,
+    config: { currency: 'CZK' }, locale: { language: 'ru' },
     callService: async (domain, service, data) => {
       log(`${domain}.${service} ${JSON.stringify(data)}`);
       const st = states[data.entity_id];
-      states[data.entity_id] = { ...st, state: data.time ?? String(data.value) };
+      states[data.entity_id] = { ...st, state: data.time ?? data.date ?? String(data.value) };
       setTimeout(() => cards.forEach((c) => (c.hass = hass())), 150); // HA reports the new state back
     },
   });
@@ -47,6 +56,10 @@
     { start_entity: 'input_datetime.dhw_start', end_entity: 'time.dhw_end', name: 'Hot water', step: 30 },
     { start_entity: 'input_datetime.dhw_start', end_entity: 'time.dhw_end', name: 'Gradient', step: 30, style: 'gradient', color: 'deep-orange', color_end: 'amber' },
     { start_entity: 'input_datetime.dhw_start', end_entity: 'time.dhw_end', name: 'Gradient, one colour', step: 30, style: 'gradient', color: 'teal' },
+    { start_entity: 'input_number.hum_lo', end_entity: 'input_number.hum_hi', name: 'Humidity', format: 'percentage', color: 'teal' },
+    { start_entity: 'input_number.price_lo', end_entity: 'input_number.price_hi', name: 'Cheap power', format: 'currency', unit: 'Kč/kWh' },
+    { start_entity: 'number.run_min', end_entity: 'number.run_max', name: 'Pump run', format: 'duration', style: 'gradient', color: 'indigo', color_end: 'light-blue' },
+    { start_entity: 'input_datetime.trip_from', end_entity: 'date.trip_to', name: 'Holiday', style: 'gradient', color: 'green', color_end: 'lime' },
     { start_entity: 'input_number.flow_min', end_entity: 'sensor.bad', name: 'Wrong pair' },
   ];
   for (const cfg of configs) {

@@ -8,6 +8,7 @@ Use it for anything that is a range made of two values:
 - a heating or hot water window: `06:00 – 20:30`
 - minimum and maximum temperature, humidity or fan speed
 - a "from / to" pair of `input_number` helpers
+- a holiday or a season: `4 Jul – 19 Jul`
 
 ![screenshot](screenshot.png)
 
@@ -19,9 +20,37 @@ Both entities must be of the same kind:
 |---|---|
 | Numbers | `input_number`, `number` |
 | Times | `time`, `input_datetime` (time only, no date) |
+| Dates | `date`, `input_datetime` (date only, no time) |
 
 For numbers, the minimum, maximum and step come from the start entity, unless you set them in
-the card. For times, the slider runs from 00:00 to 24:00 in 15-minute steps by default.
+the card. For times, the slider runs from 00:00 to 24:00 in 15-minute steps by default. For
+dates, it runs from 1 January to 31 December of the current year in 1-day steps.
+
+## What the values are
+
+`format` sets how values are shown. Pick one in the visual editor or in YAML:
+
+| `format` | Shown as | Unit |
+|---|---|---|
+| `number` | `12.5 m³` | the entity's unit, or your own `unit` |
+| `time` | `06:30` | number entities hold minutes from midnight (0–1440) |
+| `duration` | `1 h 45 min` | number entities hold minutes |
+| `date` | `4 Jul` | date entities only |
+| `temperature` | `21.5 °C` | `°C` |
+| `percentage` | `40 %` | `%` |
+| `distance` | `12 km` | `km` |
+| `length` | `2.4 m` | `m` |
+| `speed` | `50 km/h` | `km/h` |
+| `power` | `1,500 W` | `W` |
+| `energy` | `3.2 kWh` | `kWh` |
+| `volume` | `120 L` | `L` |
+| `weight` | `80 kg` | `kg` |
+| `pressure` | `1.5 bar` | `bar` |
+| `currency` | `2.50 CZK` | the currency set in Home Assistant |
+
+The entity's own unit wins over the default unit of a format. Set `unit` to write any unit you
+like, for example `unit: Kč/kWh` or `unit: rpm`. Numbers and dates use the language of your
+Home Assistant profile.
 
 ## Installation
 
@@ -58,11 +87,13 @@ name: Heating
 | `style` | `standard` | `standard` — thin track like the Home Assistant slider; `gradient` — thick track with a colour gradient and white handles |
 | `color` | `primary` | A Home Assistant colour name (`red`, `teal`, …) or any CSS colour (`#e98a3c`) |
 | `color_end` | `color` | With `style: gradient`: the colour at the right handle |
-| `format` | `number` | `time` shows number entities as a time of day (the entities hold minutes, 0–1440) |
-| `min` / `max` | from the entity | Range of the slider (times: minutes, `0` – `1440`) |
-| `step` | from the entity | Step (times: minutes, default `15`) |
+| `format` | by entity | How values are shown, see the table above |
+| `unit` | by format | Your own unit text for number formats |
+| `min` / `max` | from the entity | Range of the slider (times: minutes, `0` – `1440`; dates: `YYYY-MM-DD`) |
+| `step` | from the entity | Step (times: minutes, default `15`; dates: days, default `1`) |
 | `min_gap` | `step` | Smallest distance between the two handles |
-| `show_scale` | `true` | Show the scale under the slider |
+| `show_scale` | `true` | Show the labels under the slider |
+| `show_ticks` | `true` | Show the ruler ticks (every hour for a whole day, otherwise every step or 20 parts) |
 | `show_icon` | `true` | Show the icon |
 
 ### Examples
@@ -102,9 +133,32 @@ color: "#e98a3c"
 color_end: "#f4c04e"
 ```
 
+A holiday from / to, two date helpers:
+
+```yaml
+type: custom:range-slider-card
+start_entity: input_datetime.holiday_from
+end_entity: date.holiday_to
+name: Holiday
+style: gradient
+color: green
+color_end: lime
+```
+
+A price band with your own unit:
+
+```yaml
+type: custom:range-slider-card
+start_entity: input_number.cheap_power_low
+end_entity: input_number.cheap_power_high
+name: Cheap power
+unit: Kč/kWh
+```
+
 ## How it behaves
 
 - Drag a handle, or tap the track to move the nearest handle there.
+- While a handle moves, a bubble above it shows the exact value.
 - The value is written when you release the handle, so each drag is one service call per entity.
 - The handles cannot cross: they always stay at least `min_gap` apart.
 - Keyboard: Tab to a handle, then the arrow keys (one step) or Page Up / Page Down (ten steps).
