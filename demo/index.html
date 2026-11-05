@@ -20,7 +20,7 @@
 <div id="log"></div>
 <script type="module">
   // Minimal stand-ins for Home Assistant elements and the hass object
-  customElements.define('ha-card', class extends HTMLElement {});
+  customElements.define('ha-card', class extends HTMLElement { connectedCallback() { this.style.display = 'block'; } });
   customElements.define('ha-state-icon', class extends HTMLElement {});
   await import('../range-slider-card.js');
 

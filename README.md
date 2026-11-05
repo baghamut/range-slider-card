@@ -54,7 +54,9 @@ Home Assistant profile.
 
 ## Installation
 
-### HACS
+### Marketplace (HACS)
+
+[![Open in Home Assistant Marketplace](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=baghamut&repository=range-slider-card&category=plugin)
 
 1. HACS → ⋮ → **Custom repositories** → add `https://github.com/baghamut/range-slider-card`,
    type **Dashboard**.

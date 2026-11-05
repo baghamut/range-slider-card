@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Range Slider Card screenshot</title>
+<style>
+  :root { --primary-color: #03a9f4; --rgb-primary-color: 3,169,244; --primary-text-color: #212121;
+          --secondary-text-color: #727272; --disabled-color: #bdbdbd; --error-color: #db4437;
+          --deep-orange-color: #ff6f22; --teal-color: #009688; --green-color: #4caf50; --lime-color: #cddc39;
+          --secondary-background-color: #eeeeee; --card-background-color: #fff; --divider-color: rgba(0,0,0,.12); }
+  body { font-family: Roboto, system-ui, sans-serif; background: #fafafa; color: var(--primary-text-color);
+         margin: 0; padding: 16px; display: grid; gap: 12px; width: 460px; }
+  range-slider-card { display: block; }
+  .frame { overflow: hidden; background: var(--card-background-color); border-radius: 12px; border: 1px solid #e0e0e0; }
+</style>
+</head>
+<body>
+<script type="module">
+  customElements.define('ha-card', class extends HTMLElement { connectedCallback() { this.style.display = 'block'; } });
+  customElements.define('ha-state-icon', class extends HTMLElement {});
+  await import('../range-slider-card.js');
+  const states = {
+    'input_number.flow_min': { state: '30', attributes: { friendly_name: 'Flow min', min: 20, max: 80, step: 1, unit_of_measurement: '°C' } },
+    'input_number.flow_max': { state: '63', attributes: { friendly_name: 'Flow max', min: 20, max: 80, step: 1, unit_of_measurement: '°C' } },
+    'number.mon_start': { state: '360', attributes: { min: 0, max: 1440, step: 30 } },
+    'number.mon_end': { state: '1230', attributes: { min: 0, max: 1440, step: 30 } },
+    'input_number.hum_lo': { state: '40', last_changed: new Date(Date.now() - 7 * 60000).toISOString(), attributes: { min: 0, max: 100, step: 5 } },
+    'input_number.hum_hi': { state: '60', attributes: { min: 0, max: 100, step: 5 } },
+    'input_number.price_lo': { state: '2.5', attributes: { min: 0, max: 10, step: 0.5 } },
+    'input_number.price_hi': { state: '6', attributes: { min: 0, max: 10, step: 0.5 } },
+    'input_datetime.trip_from': { state: '2026-07-04', attributes: { has_date: true, has_time: false } },
+    'date.trip_to': { state: '2026-07-19', attributes: {} },
+  };
+  const hass = { states, config: { currency: 'CZK' }, locale: { language: 'en' }, callService: async () => {} };
+  const configs = [
+    { start_entity: 'input_number.flow_min', end_entity: 'input_number.flow_max', name: 'Flow temperature', color: 'deep-orange', min_gap: 5, scale_unit: true },
+    { start_entity: 'number.mon_start', end_entity: 'number.mon_end', name: 'Monday', format: 'time', style: 'gradient', color: '#e98a3c', color_end: '#f4c04e', position: 'row', show_scale: false },
+    { start_entity: 'input_number.hum_lo', end_entity: 'input_number.hum_hi', name: 'Humidity', format: 'percentage', color: 'teal', position: 'row', secondary_info: ['last_changed'], show_scale: false },
+    { start_entity: 'input_number.price_lo', end_entity: 'input_number.price_hi', name: 'Cheap power', unit: 'Kč/kWh', position: 'bottom' },
+    { start_entity: 'input_datetime.trip_from', end_entity: 'date.trip_to', name: 'Holiday', style: 'gradient', color: 'green', color_end: 'lime' },
+  ];
+  for (const cfg of configs) {
+    const el = document.createElement('range-slider-card');
+    el.setConfig(cfg);
+    el.hass = hass;
+    const f = document.createElement('div');
+    f.className = 'frame';
+    f.appendChild(el);
+    document.body.appendChild(f);
+  }
+  // Show one value bubble, as while dragging
+  const t = document.querySelectorAll('range-slider-card')[0].shadowRoot.querySelector('.thumb[data-t="b"]');
+  t.classList.add('active');
+</script>
+</body>
+</html>
