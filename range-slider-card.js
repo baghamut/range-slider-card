@@ -239,7 +239,15 @@ class RangeSliderCard extends HTMLElement {
         ha-card { padding: 12px 16px; }
         .head { display: flex; align-items: center; gap: 12px; min-height: 24px; }
         .head ha-state-icon, .head ha-icon { color: var(--state-icon-color, var(--paper-item-icon-color)); }
-        .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .titles { flex: 1; min-width: 0; }
+        .name, .sec { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .sec { font-size: 12px; color: var(--secondary-text-color); line-height: 16px; }
+        /* position: inline — values next to the slider, like Home Assistant's number slider */
+        .row { display: flex; align-items: flex-start; gap: 6px; }
+        .col { flex: 1; min-width: 0; }
+        .ival { margin-top: 10px; line-height: 20px; white-space: nowrap; color: var(--secondary-text-color);
+                font-variant-numeric: tabular-nums; max-width: 45%; overflow: hidden; text-overflow: ellipsis; }
+        .small .ival { font-size: 12px; }
         .val { color: var(--secondary-text-color); font-variant-numeric: tabular-nums; white-space: nowrap; }
         .track { position: relative; height: 20px; margin: 10px 10px 0; touch-action: none; cursor: pointer; }
         .track::before { content: ''; position: absolute; left: -10px; right: -10px; top: 8px; height: 4px;
@@ -278,7 +286,7 @@ class RangeSliderCard extends HTMLElement {
         /* position: below — start value under the left end, end value under the right end */
         .below { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px;
                  color: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
-        .below[hidden], .val[hidden], .ruler[hidden], .scale[hidden] { display: none; }
+        .below[hidden], .val[hidden], .ival[hidden], .sec[hidden], .ruler[hidden], .scale[hidden] { display: none; }
         .below span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .below .hi { text-align: right; margin-left: auto; }
         .small .val, .small .below { font-size: 12px; }
@@ -289,16 +297,21 @@ class RangeSliderCard extends HTMLElement {
       <ha-card>
         <div class="head">
           <ha-state-icon class="icon"></ha-state-icon>
-          <div class="name"></div>
+          <div class="titles"><div class="name"></div><div class="sec" hidden></div></div>
           <div class="val"></div>
         </div>
-        <div class="track">
-          <div class="bar"></div>
-          <div class="thumb" data-t="a" role="slider" tabindex="0"><span class="bub"></span></div>
-          <div class="thumb" data-t="b" role="slider" tabindex="0"><span class="bub"></span></div>
+        <div class="row">
+          <div class="col">
+            <div class="track">
+              <div class="bar"></div>
+              <div class="thumb" data-t="a" role="slider" tabindex="0"><span class="bub"></span></div>
+              <div class="thumb" data-t="b" role="slider" tabindex="0"><span class="bub"></span></div>
+            </div>
+            <div class="ruler"></div>
+            <div class="scale"></div>
+          </div>
+          <div class="ival" hidden></div>
         </div>
-        <div class="ruler"></div>
-        <div class="scale"></div>
         <div class="below"><span class="lo"></span><span class="hi"></span></div>
         <div class="warn" hidden></div>
       </ha-card>`;
@@ -306,7 +319,7 @@ class RangeSliderCard extends HTMLElement {
     this._el = {
       card: $('ha-card'), icon: $('.icon'), name: $('.name'), val: $('.val'), track: $('.track'),
       bar: $('.bar'), ta: $('.thumb[data-t="a"]'), tb: $('.thumb[data-t="b"]'), scale: $('.scale'), warn: $('.warn'),
-      ruler: $('.ruler'), below: $('.below'), lo: $('.lo'), hi: $('.hi'),
+      ruler: $('.ruler'), below: $('.below'), lo: $('.lo'), hi: $('.hi'), ival: $('.ival'), sec: $('.sec'),
     };
     this._bindActions();
     this._el.track.addEventListener('pointerdown', (e) => this._pointerDown(e));
@@ -333,6 +346,9 @@ class RangeSliderCard extends HTMLElement {
     el.icon.stateObj = startState;
     if (c.icon) el.icon.icon = c.icon;
     el.icon.style.display = c.show_icon === false ? 'none' : '';
+    const sec = this._secondary(startState);
+    el.sec.hidden = !sec;
+    el.sec.textContent = sec;
 
     let warn = this._error || '';
     if (!kind) {
@@ -347,7 +363,7 @@ class RangeSliderCard extends HTMLElement {
     const actions = (c.tap_action?.action ?? 'more-info') !== 'none' || c.hold_action || c.double_tap_action;
     el.icon.classList.toggle('act', !!actions);
     el.name.classList.toggle('act', !!actions);
-    if (!kind) { el.val.textContent = ''; el.below.hidden = true; return; }
+    if (!kind) { el.val.textContent = ''; el.below.hidden = true; el.ival.hidden = true; return; }
 
     const fmt = this._format(kind);
     const r = this._range(kind, fmt);
@@ -360,13 +376,19 @@ class RangeSliderCard extends HTMLElement {
     el.bar.style.width = `${Math.max(0, R - L)}%`;
     el.ta.style.left = `${L}%`;
     el.tb.style.left = `${R}%`;
-    // Where the values go: next to the name (default) or under the two ends of the slider
+    // Where the values go: next to the name (default), next to the slider, or under its two ends.
+    // With full_width the slider also takes the space next to it, so values next to it move below.
     const show = c.show || 'both';
-    const below = c.position === 'below';
+    let pos = ['header', 'inline', 'below'].includes(c.position) ? c.position : 'header';
+    if (pos === 'inline' && c.full_width) pos = 'below';
+    const below = pos === 'below';
     const ta = ok ? this._fmt(fmt, a, r.step) : '—';
     const tb = ok ? this._fmt(fmt, b, r.step) : '—';
-    el.val.hidden = below || show === 'none';
-    el.val.textContent = { both: `${ta} – ${tb}`, low: ta, high: tb }[show] ?? '';
+    const text = { both: `${ta} – ${tb}`, low: ta, high: tb }[show] ?? '';
+    el.val.hidden = pos !== 'header' || show === 'none';
+    el.val.textContent = text;
+    el.ival.hidden = pos !== 'inline' || show === 'none';
+    el.ival.textContent = text;
     el.below.hidden = !below || show === 'none';
     el.lo.textContent = show === 'both' || show === 'low' ? ta : '';
     el.hi.textContent = show === 'both' || show === 'high' ? tb : '';
@@ -404,6 +426,27 @@ class RangeSliderCard extends HTMLElement {
         return `<i class="${majors.has(Math.round(p * 100)) ? 'major' : ''}" style="left:${p}%"></i>`;
       }).join('');
     }
+  }
+
+  // Second line under the name, like the entities card: state, last changed / updated or attributes
+  _secondary(st) {
+    let keys = this._config.secondary_info;
+    if (!keys || !st) return '';
+    if (!Array.isArray(keys)) keys = [keys];
+    const h = this._hass;
+    const rel = (iso) => {
+      const sec = (new Date(iso).getTime() - Date.now()) / 1000;
+      const units = [['year', 31536000], ['month', 2592000], ['day', 86400], ['hour', 3600], ['minute', 60], ['second', 1]];
+      const [unit, size] = units.find(([, n]) => Math.abs(sec) >= n) || ['second', 1];
+      return new Intl.RelativeTimeFormat(this._lang(), { numeric: 'auto' }).format(Math.round(sec / size), unit);
+    };
+    return keys.map((k) => {
+      if (k === 'state') return h.formatEntityState ? h.formatEntityState(st) : st.state;
+      if (k === 'last_changed' || k === 'last_updated') return rel(st[k]);
+      if (k === 'last_triggered' && st.attributes.last_triggered) return rel(st.attributes.last_triggered);
+      if (st.attributes[k] === undefined) return '';
+      return h.formatEntityAttributeValue ? h.formatEntityAttributeValue(st, k) : String(st.attributes[k]);
+    }).filter(Boolean).join(' · ');
   }
 
   // New { a, b } after moving one handle to v. The handles keep at least `gap` apart; with
@@ -561,6 +604,7 @@ class RangeSliderCardEditor extends HTMLElement {
         name: 'content', type: 'expandable', flatten: true, title: 'Content', icon: 'mdi:text-short',
         schema: [
           { name: 'name', selector: { text: {} } },
+          { name: 'secondary_info', selector: { ui_state_content: {} }, context: { filter_entity: 'start_entity' } },
           {
             type: 'grid', name: '', schema: [
               { name: 'icon', selector: { icon: {} }, context: { icon_entity: 'start_entity' } },
@@ -577,6 +621,7 @@ class RangeSliderCardEditor extends HTMLElement {
             type: 'grid', name: '', schema: [
               select('position', [
                 { value: 'header', label: 'Next to the name' },
+                { value: 'inline', label: 'Next to the slider' },
                 { value: 'below', label: 'Below the slider' },
               ]),
               select('show', [
@@ -587,7 +632,7 @@ class RangeSliderCardEditor extends HTMLElement {
               ]),
             ],
           },
-          yesNo('small'),
+          { type: 'grid', name: '', schema: [yesNo('full_width'), yesNo('small')] },
         ],
       },
       {
@@ -642,8 +687,10 @@ class RangeSliderCardEditor extends HTMLElement {
         show_scale: 'Show scale labels',
         show_ticks: 'Show ruler ticks',
         show_icon: 'Show icon',
-        position: 'Values',
-        show: 'Which values',
+        position: 'Where to show the values',
+        secondary_info: 'Secondary information',
+        full_width: 'Full width slider',
+        show: 'Values to show',
         small: 'Small value text',
         push: 'A handle pushes the other one',
         tap_action: 'Tap on icon or name',
@@ -660,6 +707,10 @@ class RangeSliderCardEditor extends HTMLElement {
           step: kind === 'date' ? 'Days (default 1)' : minutes ? 'Minutes (default 15)' : undefined,
           min_gap: 'At least one step; rounded to whole steps (default: one step)',
           push: 'Off: a handle stops at the other one',
+          position: 'Next to the name by default',
+          full_width: 'With values next to the slider: the slider takes their space and they move below it',
+          small: 'Shows the values in smaller text',
+          secondary_info: 'A second line under the name, from the start entity',
         }[s.name];
       };
       this._form.addEventListener('value-changed', (e) => {

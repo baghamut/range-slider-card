@@ -70,7 +70,7 @@ Home Assistant profile.
 
 Add the card from the card picker (**Range Slider Card**) and pick the two entities in the
 visual editor. Like the editor of Home Assistant's tile card, the rest folds into sections:
-**Content** (name, icon, value kind and unit, where the values go), **Slider** (style, colours,
+**Content** (name, secondary information, icon, value kind and unit, where the values go, full width, small text), **Slider** (style, colours,
 range, step, gap, push, scale and ticks) and **Interactions** (tap, hold, double tap). Or use YAML:
 
 ```yaml
@@ -94,7 +94,9 @@ name: Heating
 | `min` / `max` | from the entity | Range of the slider (times: minutes, `0` – `1440`; dates: `YYYY-MM-DD`) |
 | `step` | from the entity | Step (times: minutes, default `15`; dates: days, default `1`) |
 | `min_gap` | `step` | Smallest distance between the two handles. Never less than one step; rounded to whole steps |
-| `position` | `header` | Where the values are: `header` (next to the name) or `below` (the start value under the left end, the end value under the right end) |
+| `secondary_info` | none | A second line under the name, from the start entity: `state`, `last_changed`, `last_updated` or any attribute; a list shows several, joined by `·` |
+| `position` | `header` | Where the values are: `header` (next to the name), `inline` (next to the slider, like Home Assistant's number slider) or `below` (the start value under the left end, the end value under the right end) |
+| `full_width` | `false` | With `position: inline`: the slider also takes the space of the values, which move below it |
 | `show` | `both` | Which values to show: `both`, `low`, `high` or `none` |
 | `small` | `false` | Show the values in small text |
 | `push` | `false` | `true` lets a handle push the other one along instead of stopping at it; both entities change |

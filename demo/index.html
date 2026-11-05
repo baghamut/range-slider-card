@@ -31,7 +31,7 @@
     'input_datetime.dhw_start': { state: '06:00:00', attributes: { friendly_name: 'Hot water start', has_time: true, has_date: false } },
     'time.dhw_end': { state: '20:30:00', attributes: { friendly_name: 'Hot water end' } },
     'sensor.bad': { state: '1', attributes: {} },
-    'input_number.hum_lo': { state: '40', attributes: { friendly_name: 'Humidity low', min: 0, max: 100, step: 5 } },
+    'input_number.hum_lo': { state: '40', last_changed: new Date(Date.now()-7*60000).toISOString(), attributes: { friendly_name: 'Humidity low', min: 0, max: 100, step: 5 } },
     'input_number.hum_hi': { state: '60', attributes: { friendly_name: 'Humidity high', min: 0, max: 100, step: 5 } },
     'input_number.price_lo': { state: '2.5', attributes: { min: 0, max: 10, step: 0.5 } },
     'input_number.price_hi': { state: '6', attributes: { min: 0, max: 10, step: 0.5 } },
@@ -61,6 +61,8 @@
     { start_entity: 'number.run_min', end_entity: 'number.run_max', name: 'Pump run', format: 'duration', style: 'gradient', color: 'indigo', color_end: 'light-blue' },
     { start_entity: 'input_datetime.trip_from', end_entity: 'date.trip_to', name: 'Holiday', style: 'gradient', color: 'green', color_end: 'lime' },
     { start_entity: 'input_number.flow_min', end_entity: 'input_number.flow_max', name: 'Below, small, push', position: 'below', small: true, push: true, min_gap: 5, show_scale: false },
+    { start_entity: 'input_number.hum_lo', end_entity: 'input_number.hum_hi', name: 'Inline + secondary', format: 'percentage', position: 'inline', secondary_info: ['last_changed'], show_scale: false },
+    { start_entity: 'input_number.hum_lo', end_entity: 'input_number.hum_hi', name: 'Inline, full width', format: 'percentage', position: 'inline', full_width: true, small: true },
     { start_entity: 'input_number.flow_min', end_entity: 'sensor.bad', name: 'Wrong pair' },
   ];
   for (const cfg of configs) {
