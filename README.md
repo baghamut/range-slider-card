@@ -95,8 +95,8 @@ name: Heating
 | `step` | from the entity | Step (times: minutes, default `15`; dates: days, default `1`) |
 | `min_gap` | `step` | Smallest distance between the two handles. Never less than one step; rounded to whole steps |
 | `secondary_info` | none | A second line under the name, from the start entity: `state`, `last_changed`, `last_updated` or any attribute; a list shows several, joined by `·` |
-| `position` | `header` | Where the values are: `header` (next to the name), `inline` (next to the slider, like Home Assistant's number slider) or `below` (the start value under the left end, the end value under the right end) |
-| `full_width` | `false` | With `position: inline`: the slider also takes the space of the values, which move below it |
+| `position` | `header` | Where the values are: `header` (next to the name, the slider on its own line below), `inline` (icon, name, slider and values on one line, like Home Assistant's number slider) or `below` (one line, with the start value under the left end of the slider and the end value under the right end) |
+| `full_width` | `false` | On one line (`inline`, `below`) the slider keeps the size of a number slider; `true` lets it take the rest of the line, and values next to it move below it |
 | `show` | `both` | Which values to show: `both`, `low`, `high` or `none` |
 | `small` | `false` | Show the values in small text |
 | `push` | `false` | `true` lets a handle push the other one along instead of stopping at it; both entities change |

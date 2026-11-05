@@ -248,6 +248,15 @@ class RangeSliderCard extends HTMLElement {
         .ival { margin-top: 10px; line-height: 20px; white-space: nowrap; color: var(--secondary-text-color);
                 font-variant-numeric: tabular-nums; max-width: 45%; overflow: hidden; text-overflow: ellipsis; }
         .small .ival { font-size: 12px; }
+        /* One row, like Home Assistant's number slider: icon, name, then the slider (and values) on the right.
+           The slider keeps a number-slider size; with full_width it takes the rest of the row. */
+        .rowl .main { display: flex; align-items: flex-start; gap: 12px; }
+        .rowl .head { flex: 1 1 0; min-width: 0; min-height: 24px; }
+        .rowl .row { flex: 1.5 1 0; max-width: 320px; }
+        .rowl.fullw .row { flex: 3 1 0; max-width: none; }
+        .rowl .track { margin-top: 2px; }
+        .rowl.gradient .track { margin-top: 1px; }
+        .rowl .ival { margin-top: 2px; }
         .val { color: var(--secondary-text-color); font-variant-numeric: tabular-nums; white-space: nowrap; }
         .track { position: relative; height: 20px; margin: 10px 10px 0; touch-action: none; cursor: pointer; }
         .track::before { content: ''; position: absolute; left: -10px; right: -10px; top: 8px; height: 4px;
@@ -295,6 +304,7 @@ class RangeSliderCard extends HTMLElement {
         .off .track, .off .scale { opacity: .4; pointer-events: none; }
       </style>
       <ha-card>
+        <div class="main">
         <div class="head">
           <ha-state-icon class="icon"></ha-state-icon>
           <div class="titles"><div class="name"></div><div class="sec" hidden></div></div>
@@ -309,10 +319,11 @@ class RangeSliderCard extends HTMLElement {
             </div>
             <div class="ruler"></div>
             <div class="scale"></div>
+            <div class="below"><span class="lo"></span><span class="hi"></span></div>
           </div>
           <div class="ival" hidden></div>
         </div>
-        <div class="below"><span class="lo"></span><span class="hi"></span></div>
+        </div>
         <div class="warn" hidden></div>
       </ha-card>`;
     const $ = (s) => this.shadowRoot.querySelector(s);
@@ -381,6 +392,8 @@ class RangeSliderCard extends HTMLElement {
     const show = c.show || 'both';
     let pos = ['header', 'inline', 'below'].includes(c.position) ? c.position : 'header';
     if (pos === 'inline' && c.full_width) pos = 'below';
+    el.card.classList.toggle('rowl', pos !== 'header');
+    el.card.classList.toggle('fullw', !!c.full_width);
     const below = pos === 'below';
     const ta = ok ? this._fmt(fmt, a, r.step) : '—';
     const tb = ok ? this._fmt(fmt, b, r.step) : '—';
