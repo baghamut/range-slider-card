@@ -630,12 +630,7 @@ class RangeSliderCardEditor extends HTMLElement {
             name: 'secondary_info',
             selector: { select: { multiple: true, mode: 'dropdown', custom_value: true, options: this._secondaryOptions() } },
           },
-          {
-            type: 'grid', name: '', schema: [
-              { name: 'icon', selector: { icon: {} }, context: { icon_entity: 'start_entity' } },
-              yesNo('show_icon'),
-            ],
-          },
+          { name: 'icon', selector: { icon: {} }, context: { icon_entity: 'start_entity' } },
           {
             type: 'grid', name: '', schema: [
               { name: 'format', selector: { select: { mode: 'dropdown', options: this._formatOptions() } } },
@@ -658,6 +653,7 @@ class RangeSliderCardEditor extends HTMLElement {
             ],
           },
           yesNo('small'),
+          yesNo('show_icon'),
         ],
       },
       {
@@ -681,7 +677,11 @@ class RangeSliderCardEditor extends HTMLElement {
               { name: 'min_gap', selector: { number: { mode: 'box', step: 'any' } } },
             ],
           },
-          { type: 'grid', name: '', schema: [yesNo('show_scale'), yesNo('scale_unit'), yesNo('show_ticks'), yesNo('push')] },
+          // Switches one per line: in a grid, one with a helper is taller and its neighbour drifts
+          yesNo('show_scale'),
+          yesNo('scale_unit'),
+          yesNo('show_ticks'),
+          yesNo('push'),
         ],
       },
       {
