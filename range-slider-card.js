@@ -167,6 +167,17 @@ class RangeSliderCard extends HTMLElement {
         .thumb.active { cursor: grabbing; }
         .scale { position: relative; height: 14px; margin: 4px 10px 0; font-size: 11px; color: var(--secondary-text-color); }
         .scale span { position: absolute; transform: translateX(-50%); }
+        /* style: gradient — thick track, colour gradient between the handles, white handles with a ring */
+        .gradient .track { height: 22px; }
+        .gradient .track::before { top: 4px; height: 14px; border-radius: 7px;
+                                   background: var(--secondary-background-color, rgba(127,127,127,.15)); }
+        .gradient .bar { top: 4px; height: 14px; border-radius: 7px;
+                         background: linear-gradient(90deg, var(--rs-color), var(--rs-color2)); }
+        .gradient .thumb { width: 22px; height: 22px; margin: -11px 0 0 -11px; background: #fff; box-sizing: border-box;
+                           border: 3px solid var(--rs-color); box-shadow: 0 1px 3px rgba(0,0,0,.35); }
+        .gradient .thumb[data-t="b"] { border-color: var(--rs-color2); }
+        .gradient .thumb:focus-visible, .gradient .thumb.active {
+          box-shadow: 0 1px 3px rgba(0,0,0,.35), 0 0 0 8px color-mix(in srgb, var(--rs-color) 20%, transparent); }
         .warn { color: var(--error-color); font-size: 13px; padding: 4px 0; }
         .off .track, .off .scale { opacity: .4; pointer-events: none; }
       </style>
@@ -200,6 +211,8 @@ class RangeSliderCard extends HTMLElement {
     const el = this._el;
     const c = this._config;
     el.card.style.setProperty('--rs-color', cssColor(c.color));
+    el.card.style.setProperty('--rs-color2', cssColor(c.color_end || c.color));
+    el.card.classList.toggle('gradient', c.style === 'gradient');
 
     const kind = this._kind();
     const startState = this._hass.states[c.start_entity];
@@ -344,10 +357,19 @@ class RangeSliderCardEditor extends HTMLElement {
       { name: 'start_entity', required: true, selector: entity },
       { name: 'end_entity', required: true, selector: entity },
       { name: 'name', selector: { text: {} } },
+      { name: 'icon', selector: { icon: {} }, context: { icon_entity: 'start_entity' } },
+      {
+        name: 'style',
+        selector: { select: { mode: 'box', options: [
+          { value: 'standard', label: 'Standard' },
+          { value: 'gradient', label: 'Gradient' },
+        ] } },
+      },
       {
         type: 'grid', name: '', schema: [
-          { name: 'icon', selector: { icon: {} }, context: { icon_entity: 'start_entity' } },
           { name: 'color', selector: { ui_color: { default_color: 'primary' } } },
+          ...(this._config.style === 'gradient'
+            ? [{ name: 'color_end', selector: { ui_color: { default_color: 'primary' } } }] : []),
         ],
       },
       {
@@ -387,7 +409,9 @@ class RangeSliderCardEditor extends HTMLElement {
         end_entity: 'End entity',
         name: 'Name',
         icon: 'Icon',
-        color: 'Colour',
+        color: this._config.style === 'gradient' ? 'Start colour' : 'Colour',
+        color_end: 'End colour',
+        style: 'Style',
         min: 'Minimum',
         max: 'Maximum',
         step: 'Step',
@@ -404,7 +428,9 @@ class RangeSliderCardEditor extends HTMLElement {
       this._form.addEventListener('value-changed', (e) => {
         const config = { ...e.detail.value };
         Object.keys(config).forEach((k) => (config[k] === '' || config[k] === undefined) && delete config[k]);
+        const styleChanged = config.style !== this._config.style;
         this._config = config;
+        if (styleChanged) this._form.schema = this._schema(); // show or hide "End colour"
         fireEvent(this, 'config-changed', { config });
       });
       this.appendChild(this._form);

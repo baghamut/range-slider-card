@@ -7,7 +7,7 @@
 <style>
   :root { --primary-color: #03a9f4; --rgb-primary-color: 3,169,244; --primary-text-color: #212121;
           --secondary-text-color: #727272; --disabled-color: #bdbdbd; --error-color: #db4437;
-          --deep-orange-color: #ff6f22; --teal-color: #009688; --card-background-color: #fff; }
+          --deep-orange-color: #ff6f22; --teal-color: #009688; --amber-color: #ffc107; --secondary-background-color: #eeeeee; --card-background-color: #fff; }
   body { font-family: Roboto, system-ui, sans-serif; background: #fafafa; color: var(--primary-text-color);
          margin: 0; padding: 16px; display: grid; gap: 16px; max-width: 420px; }
   ha-card { display: block; background: var(--card-background-color); border-radius: 12px;
@@ -45,6 +45,8 @@
   const configs = [
     { start_entity: 'input_number.flow_min', end_entity: 'input_number.flow_max', name: 'Flow temperature', color: 'deep-orange', min_gap: 5 },
     { start_entity: 'input_datetime.dhw_start', end_entity: 'time.dhw_end', name: 'Hot water', step: 30 },
+    { start_entity: 'input_datetime.dhw_start', end_entity: 'time.dhw_end', name: 'Gradient', step: 30, style: 'gradient', color: 'deep-orange', color_end: 'amber' },
+    { start_entity: 'input_datetime.dhw_start', end_entity: 'time.dhw_end', name: 'Gradient, one colour', step: 30, style: 'gradient', color: 'teal' },
     { start_entity: 'input_number.flow_min', end_entity: 'sensor.bad', name: 'Wrong pair' },
   ];
   for (const cfg of configs) {

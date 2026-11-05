@@ -55,7 +55,10 @@ name: Heating
 | `end_entity` | required | Entity for the right handle |
 | `name` | start entity's name | Title shown above the slider |
 | `icon` | start entity's icon | Icon next to the title |
-| `color` | `primary` | A Home Assistant colour name (`red`, `teal`, …) or any CSS colour |
+| `style` | `standard` | `standard` — thin track like the Home Assistant slider; `gradient` — thick track with a colour gradient and white handles |
+| `color` | `primary` | A Home Assistant colour name (`red`, `teal`, …) or any CSS colour (`#e98a3c`) |
+| `color_end` | `color` | With `style: gradient`: the colour at the right handle |
+| `format` | `number` | `time` shows number entities as a time of day (the entities hold minutes, 0–1440) |
 | `min` / `max` | from the entity | Range of the slider (times: minutes, `0` – `1440`) |
 | `step` | from the entity | Step (times: minutes, default `15`) |
 | `min_gap` | `step` | Smallest distance between the two handles |
@@ -83,6 +86,20 @@ start_entity: time.dhw_window_start
 end_entity: time.dhw_window_end
 name: Hot water
 step: 30
+```
+
+A gradient slider over two `number` entities that hold minutes:
+
+```yaml
+type: custom:range-slider-card
+start_entity: number.heating_monday_start
+end_entity: number.heating_monday_end
+name: Monday
+format: time
+step: 30
+style: gradient
+color: "#e98a3c"
+color_end: "#f4c04e"
 ```
 
 ## How it behaves
