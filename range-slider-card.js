@@ -76,15 +76,21 @@ class RangeSliderCard extends HTMLElement {
 
   // ---- model ---------------------------------------------------------------
 
+  // 'number', 'time' (time entities) or 'minutes' (number entities shown as a time of day)
   _kind() {
     const a = kindOf(this._hass, this._config.start_entity);
     const b = kindOf(this._hass, this._config.end_entity);
-    return a && a === b ? a : null;
+    if (!a || a !== b) return null;
+    return a === 'number' && this._config.format === 'time' ? 'minutes' : a;
   }
 
   _range(kind) {
     const c = this._config;
     const attr = this._hass.states[c.start_entity]?.attributes || {};
+    if (kind === 'minutes') {
+      const step = Number(c.step ?? attr.step ?? 15) || 15;
+      return { min: Number(c.min ?? attr.min ?? 0), max: Number(c.max ?? attr.max ?? DAY), step };
+    }
     if (kind === 'time') {
       const step = Number(c.step) || 15;
       return { min: Number(c.min ?? 0), max: Number(c.max ?? DAY), step };
@@ -110,7 +116,7 @@ class RangeSliderCard extends HTMLElement {
 
   _fmt(kind, v, step) {
     if (!Number.isFinite(v)) return '—';
-    if (kind === 'time') return formatTime(v);
+    if (kind !== 'number') return formatTime(v);
     const unit = this._hass.states[this._config.start_entity]?.attributes.unit_of_measurement;
     return `${v.toFixed(decimalsOf(step))}${unit ? ` ${unit}` : ''}`;
   }
@@ -237,11 +243,13 @@ class RangeSliderCard extends HTMLElement {
     if (this._scaleKey !== scaleKey) {
       this._scaleKey = scaleKey;
       el.scale.hidden = !c.show_scale;
-      const ticks = kind === 'time' && r.min === 0 && r.max === DAY
+      const isTime = kind !== 'number';
+      const ticks = isTime && r.min === 0 && r.max === DAY
         ? [0, 360, 720, 1080, 1440]
         : [0, 0.25, 0.5, 0.75, 1].map((f) => r.min + f * (r.max - r.min));
       el.scale.innerHTML = ticks.map((v) => {
-        const label = kind === 'time' ? String(Math.round(v / 60)) : String(+v.toFixed(decimalsOf(r.step)));
+        const label = isTime ? (r.min === 0 && r.max === DAY ? String(Math.round(v / 60)) : formatTime(v))
+          : String(+v.toFixed(decimalsOf(r.step)));
         return `<span style="left:${pct(v)}%">${label}</span>`;
       }).join('');
     }
@@ -360,6 +368,13 @@ class RangeSliderCardEditor extends HTMLElement {
           { name: 'show_icon', selector: { boolean: {} } },
         ],
       },
+      {
+        name: 'format',
+        selector: { select: { mode: 'dropdown', options: [
+          { value: 'number', label: 'Number' },
+          { value: 'time', label: 'Time of day (number entities hold minutes, 0–1440)' },
+        ] } },
+      },
     ];
   }
 
@@ -379,6 +394,7 @@ class RangeSliderCardEditor extends HTMLElement {
         min_gap: 'Minimum gap between handles',
         show_scale: 'Show scale',
         show_icon: 'Show icon',
+        format: 'Show numbers as',
       }[s.name] ?? s.name);
       this._form.computeHelper = (s) => ({
         min: 'Empty = from the entity (times: 0)',
