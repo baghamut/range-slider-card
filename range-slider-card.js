@@ -385,7 +385,9 @@ class RangeSliderCard extends HTMLElement {
 
   _clamp(kind, which, v, cur) {
     const r = this._range(kind, this._format(kind));
-    const gap = Number(this._config.min_gap ?? r.step);
+    // The gap is never smaller than one step (a smaller or broken value would let the handles meet)
+    const want = Number(this._config.min_gap);
+    const gap = Number.isFinite(want) && want > r.step ? Math.round(want / r.step) * r.step : r.step;
     v = Math.round((v - r.min) / r.step) * r.step + r.min;
     v = +v.toFixed(10);
     v = Math.max(r.min, Math.min(r.max, v));
@@ -564,6 +566,7 @@ class RangeSliderCardEditor extends HTMLElement {
           min: kind === 'date' ? 'Empty = 1 January this year' : minutes ? 'Minutes; empty = 0' : 'Empty = from the entity',
           max: kind === 'date' ? 'Empty = 31 December this year' : minutes ? 'Minutes; empty = 1440 (24:00)' : 'Empty = from the entity',
           step: kind === 'date' ? 'Days (default 1)' : minutes ? 'Minutes (default 15)' : undefined,
+          min_gap: 'At least one step; rounded to whole steps (default: one step)',
         }[s.name];
       };
       this._form.addEventListener('value-changed', (e) => {

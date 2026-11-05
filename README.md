@@ -91,7 +91,7 @@ name: Heating
 | `unit` | by format | Your own unit text for number formats |
 | `min` / `max` | from the entity | Range of the slider (times: minutes, `0` – `1440`; dates: `YYYY-MM-DD`) |
 | `step` | from the entity | Step (times: minutes, default `15`; dates: days, default `1`) |
-| `min_gap` | `step` | Smallest distance between the two handles |
+| `min_gap` | `step` | Smallest distance between the two handles. Never less than one step; rounded to whole steps |
 | `show_scale` | `true` | Show the labels under the slider |
 | `show_ticks` | `true` | Show the ruler ticks (every hour for a whole day, otherwise every step or 20 parts) |
 | `show_icon` | `true` | Show the icon |
