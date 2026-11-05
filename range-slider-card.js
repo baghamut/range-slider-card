@@ -405,7 +405,10 @@ class RangeSliderCard extends HTMLElement {
       t.firstElementChild.textContent = text;
     });
 
-    const scaleKey = `${fmt}|${r.min}|${r.max}|${r.step}|${c.show_scale}|${c.show_ticks}`;
+    // Unit after the last scale label (scale_unit): "h" for a whole day, the value's unit for numbers
+    const fullDayScale = (fmt === 'time' || fmt === 'duration') && r.min === 0 && r.max === DAY;
+    const scaleUnit = !c.scale_unit ? '' : fullDayScale ? 'h' : kind === 'number' && !FORMATS[fmt].minutes ? this._unit(fmt) : '';
+    const scaleKey = `${fmt}|${r.min}|${r.max}|${r.step}|${c.show_scale}|${c.show_ticks}|${scaleUnit}`;
     if (this._scaleKey !== scaleKey) {
       this._scaleKey = scaleKey;
       el.scale.hidden = !c.show_scale;
@@ -414,8 +417,9 @@ class RangeSliderCard extends HTMLElement {
       const labels = fullDay
         ? [0, 360, 720, 1080, 1440]
         : [0, 0.25, 0.5, 0.75, 1].map((f) => r.min + f * (r.max - r.min));
-      el.scale.innerHTML = labels.map((v) => {
-        const label = fullDay ? String(v / 60) : this._fmt(fmt, v, r.step, true);
+      el.scale.innerHTML = labels.map((v, i) => {
+        let label = fullDay ? String(v / 60) : this._fmt(fmt, v, r.step, true);
+        if (scaleUnit && i === labels.length - 1) label += `\u00a0${scaleUnit}`;
         return `<span style="left:${pct(v)}%">${label}</span>`;
       }).join('');
       // Small ticks: every hour for a whole day, otherwise every step if that is not too dense, else 20 parts
@@ -446,6 +450,7 @@ class RangeSliderCard extends HTMLElement {
     return keys.map((k) => {
       if (k === 'state') return h.formatEntityState ? h.formatEntityState(st) : st.state;
       if (k === 'last_changed' || k === 'last_updated') return rel(st[k]);
+      if (k === 'last_reported') return rel(st.last_reported || st.last_updated);
       if (k === 'last_triggered' && st.attributes.last_triggered) return rel(st.attributes.last_triggered);
       if (st.attributes[k] === undefined) return '';
       return h.formatEntityAttributeValue ? h.formatEntityAttributeValue(st, k) : String(st.attributes[k]);
@@ -579,6 +584,20 @@ class RangeSliderCardEditor extends HTMLElement {
 
   _kind() { return kindOf(this._hass, this._config.start_entity); }
 
+  // Second line choices: state, when the value last changed or was last reported, and attributes
+  _secondaryOptions() {
+    const st = this._hass.states[this._config.start_entity];
+    const skip = new Set(['friendly_name', 'icon', 'entity_picture', 'unit_of_measurement', 'device_class',
+      'state_class', 'supported_features', 'editable', 'restored', 'mode']);
+    const attrs = st ? Object.keys(st.attributes).filter((k) => !skip.has(k)) : [];
+    return [
+      { value: 'state', label: 'State' },
+      { value: 'last_changed', label: 'Last changed' },
+      { value: 'last_reported', label: 'Last reported' },
+      ...attrs.map((k) => ({ value: k, label: `Attribute: ${k}` })),
+    ];
+  }
+
   // Value kinds that make sense for the picked entities
   _formatOptions() {
     const kind = this._kind();
@@ -607,7 +626,10 @@ class RangeSliderCardEditor extends HTMLElement {
         name: 'content', type: 'expandable', flatten: true, title: 'Content', icon: 'mdi:text-short',
         schema: [
           { name: 'name', selector: { text: {} } },
-          { name: 'secondary_info', selector: { ui_state_content: {} }, context: { filter_entity: 'start_entity' } },
+          {
+            name: 'secondary_info',
+            selector: { select: { multiple: true, mode: 'dropdown', custom_value: true, options: this._secondaryOptions() } },
+          },
           {
             type: 'grid', name: '', schema: [
               { name: 'icon', selector: { icon: {} }, context: { icon_entity: 'start_entity' } },
@@ -659,7 +681,7 @@ class RangeSliderCardEditor extends HTMLElement {
               { name: 'min_gap', selector: { number: { mode: 'box', step: 'any' } } },
             ],
           },
-          { type: 'grid', name: '', schema: [yesNo('push'), yesNo('show_scale'), yesNo('show_ticks')] },
+          { type: 'grid', name: '', schema: [yesNo('show_scale'), yesNo('scale_unit'), yesNo('show_ticks'), yesNo('push')] },
         ],
       },
       {
@@ -689,6 +711,7 @@ class RangeSliderCardEditor extends HTMLElement {
         min_gap: 'Minimum gap between handles',
         show_scale: 'Show scale labels',
         show_ticks: 'Show ruler ticks',
+        scale_unit: 'Unit at the end of the scale',
         show_icon: 'Show icon',
         position: 'Where to show the text',
         secondary_info: 'Secondary information',
@@ -711,6 +734,7 @@ class RangeSliderCardEditor extends HTMLElement {
           push: 'Off: a handle stops at the other one',
           position: 'The name and the values together; above the slider by default',
           small: 'Shows the values in smaller text',
+          scale_unit: 'For example "24 h", "100 %" or "80 °C" after the last label',
           secondary_info: 'A second line under the name, from the start entity',
         }[s.name];
       };
