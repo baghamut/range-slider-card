@@ -70,7 +70,7 @@ Home Assistant profile.
 
 Add the card from the card picker (**Range Slider Card**) and pick the two entities in the
 visual editor. Like the editor of Home Assistant's tile card, the rest folds into sections:
-**Content** (name, secondary information, icon, value kind and unit, where the values go, full width, small text), **Slider** (style, colours,
+**Content** (name, secondary information, icon, value kind and unit, where the text goes, small text), **Slider** (style, colours,
 range, step, gap, push, scale and ticks) and **Interactions** (tap, hold, double tap). Or use YAML:
 
 ```yaml
@@ -95,8 +95,7 @@ name: Heating
 | `step` | from the entity | Step (times: minutes, default `15`; dates: days, default `1`) |
 | `min_gap` | `step` | Smallest distance between the two handles. Never less than one step; rounded to whole steps |
 | `secondary_info` | none | A second line under the name, from the start entity: `state`, `last_changed`, `last_updated` or any attribute; a list shows several, joined by `·` |
-| `position` | `header` | Where the values are: `header` (next to the name, the slider on its own line below), `inline` (icon, name, slider and values on one line, like Home Assistant's number slider) or `below` (one line, with the start value under the left end of the slider and the end value under the right end) |
-| `full_width` | `false` | On one line (`inline`, `below`) the slider keeps the size of a number slider; `true` lets it take the rest of the line, and values next to it move below it |
+| `position` | `top` | Where the text — the name and the values together — goes: `top` (above the slider), `row` (in one row: name on the left, the slider in the middle, values on the right, like Home Assistant's number slider) or `bottom` (below the slider) |
 | `show` | `both` | Which values to show: `both`, `low`, `high` or `none` |
 | `small` | `false` | Show the values in small text |
 | `push` | `false` | `true` lets a handle push the other one along instead of stopping at it; both entities change |
