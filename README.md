@@ -69,7 +69,9 @@ Home Assistant profile.
 ## Configuration
 
 Add the card from the card picker (**Range Slider Card**) and pick the two entities in the
-visual editor, or use YAML:
+visual editor. Like the editor of Home Assistant's tile card, the rest folds into sections:
+**Content** (name, icon, value kind and unit, where the values go), **Slider** (style, colours,
+range, step, gap, push, scale and ticks) and **Interactions** (tap, hold, double tap). Or use YAML:
 
 ```yaml
 type: custom:range-slider-card
@@ -92,9 +94,14 @@ name: Heating
 | `min` / `max` | from the entity | Range of the slider (times: minutes, `0` – `1440`; dates: `YYYY-MM-DD`) |
 | `step` | from the entity | Step (times: minutes, default `15`; dates: days, default `1`) |
 | `min_gap` | `step` | Smallest distance between the two handles. Never less than one step; rounded to whole steps |
+| `position` | `header` | Where the values are: `header` (next to the name) or `below` (the start value under the left end, the end value under the right end) |
+| `show` | `both` | Which values to show: `both`, `low`, `high` or `none` |
+| `small` | `false` | Show the values in small text |
+| `push` | `false` | `true` lets a handle push the other one along instead of stopping at it; both entities change |
 | `show_scale` | `true` | Show the labels under the slider |
 | `show_ticks` | `true` | Show the ruler ticks (every hour for a whole day, otherwise every step or 20 parts) |
 | `show_icon` | `true` | Show the icon |
+| `tap_action`, `hold_action`, `double_tap_action` | more info | What a tap, a long press or a double tap on the icon or name does. Any Home Assistant [action](https://www.home-assistant.io/dashboards/actions/); by default a tap or long press opens the start entity's details |
 
 ### Examples
 

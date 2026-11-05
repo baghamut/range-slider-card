@@ -6,7 +6,7 @@
  * any unit, or as one of the common kinds: time of day, duration, temperature, percent…
  * Type: custom:range-slider-card · https://github.com/baghamut/range-slider-card · MIT License
  */
-const CARD_VERSION = '0.2.0';
+const CARD_VERSION = '0.3.0';
 
 const NUMBER_DOMAINS = ['input_number', 'number'];
 const ENTITY_DOMAINS = [...NUMBER_DOMAINS, 'time', 'date', 'input_datetime'];
@@ -275,6 +275,14 @@ class RangeSliderCard extends HTMLElement {
         .gradient .thumb[data-t="b"] { border-color: var(--rs-color2); }
         .gradient .thumb.kbd, .gradient .thumb.active {
           box-shadow: 0 1px 3px rgba(0,0,0,.35), 0 0 0 8px color-mix(in srgb, var(--rs-color) 20%, transparent); }
+        /* position: below — start value under the left end, end value under the right end */
+        .below { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px;
+                 color: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
+        .below[hidden], .val[hidden], .ruler[hidden], .scale[hidden] { display: none; }
+        .below span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .below .hi { text-align: right; margin-left: auto; }
+        .small .val, .small .below { font-size: 12px; }
+        .act { cursor: pointer; }
         .warn { color: var(--error-color); font-size: 13px; padding: 4px 0; }
         .off .track, .off .scale { opacity: .4; pointer-events: none; }
       </style>
@@ -291,14 +299,16 @@ class RangeSliderCard extends HTMLElement {
         </div>
         <div class="ruler"></div>
         <div class="scale"></div>
+        <div class="below"><span class="lo"></span><span class="hi"></span></div>
         <div class="warn" hidden></div>
       </ha-card>`;
     const $ = (s) => this.shadowRoot.querySelector(s);
     this._el = {
       card: $('ha-card'), icon: $('.icon'), name: $('.name'), val: $('.val'), track: $('.track'),
       bar: $('.bar'), ta: $('.thumb[data-t="a"]'), tb: $('.thumb[data-t="b"]'), scale: $('.scale'), warn: $('.warn'),
-      ruler: $('.ruler'),
+      ruler: $('.ruler'), below: $('.below'), lo: $('.lo'), hi: $('.hi'),
     };
+    this._bindActions();
     this._el.track.addEventListener('pointerdown', (e) => this._pointerDown(e));
     [this._el.ta, this._el.tb].forEach((t) => {
       t.addEventListener('keydown', (e) => this._key(e, t.dataset.t));
@@ -333,7 +343,11 @@ class RangeSliderCard extends HTMLElement {
     el.warn.hidden = !warn;
     el.warn.textContent = warn;
     el.card.classList.toggle('off', !kind);
-    if (!kind) { el.val.textContent = ''; return; }
+    el.card.classList.toggle('small', !!c.small);
+    const actions = (c.tap_action?.action ?? 'more-info') !== 'none' || c.hold_action || c.double_tap_action;
+    el.icon.classList.toggle('act', !!actions);
+    el.name.classList.toggle('act', !!actions);
+    if (!kind) { el.val.textContent = ''; el.below.hidden = true; return; }
 
     const fmt = this._format(kind);
     const r = this._range(kind, fmt);
@@ -346,7 +360,16 @@ class RangeSliderCard extends HTMLElement {
     el.bar.style.width = `${Math.max(0, R - L)}%`;
     el.ta.style.left = `${L}%`;
     el.tb.style.left = `${R}%`;
-    el.val.textContent = ok ? `${this._fmt(fmt, a, r.step)} – ${this._fmt(fmt, b, r.step)}` : '—';
+    // Where the values go: next to the name (default) or under the two ends of the slider
+    const show = c.show || 'both';
+    const below = c.position === 'below';
+    const ta = ok ? this._fmt(fmt, a, r.step) : '—';
+    const tb = ok ? this._fmt(fmt, b, r.step) : '—';
+    el.val.hidden = below || show === 'none';
+    el.val.textContent = { both: `${ta} – ${tb}`, low: ta, high: tb }[show] ?? '';
+    el.below.hidden = !below || show === 'none';
+    el.lo.textContent = show === 'both' || show === 'low' ? ta : '';
+    el.hi.textContent = show === 'both' || show === 'high' ? tb : '';
     [[el.ta, a, 'Start'], [el.tb, b, 'End']].forEach(([t, v, label]) => {
       t.setAttribute('aria-label', label);
       t.setAttribute('aria-valuemin', r.min);
@@ -383,15 +406,52 @@ class RangeSliderCard extends HTMLElement {
     }
   }
 
-  _clamp(kind, which, v, cur) {
+  // New { a, b } after moving one handle to v. The handles keep at least `gap` apart; with
+  // `push: true` the moving handle pushes the other one along instead of stopping at it.
+  _move(kind, which, v, cur) {
     const r = this._range(kind, this._format(kind));
     // The gap is never smaller than one step (a smaller or broken value would let the handles meet)
     const want = Number(this._config.min_gap);
     const gap = Number.isFinite(want) && want > r.step ? Math.round(want / r.step) * r.step : r.step;
-    v = Math.round((v - r.min) / r.step) * r.step + r.min;
-    v = +v.toFixed(10);
-    v = Math.max(r.min, Math.min(r.max, v));
-    return which === 'a' ? Math.min(v, cur.b - gap) : Math.max(v, cur.a + gap);
+    const snap = (x) => +(Math.round((x - r.min) / r.step) * r.step + r.min).toFixed(10);
+    v = Math.max(r.min, Math.min(r.max, snap(v)));
+    let { a, b } = cur;
+    if (which === 'a') {
+      if (this._config.push) { a = Math.min(v, r.max - gap); b = Math.max(b, a + gap); } else a = Math.min(v, b - gap);
+    } else if (this._config.push) { b = Math.max(v, r.min + gap); a = Math.min(a, b - gap); } else b = Math.max(v, a + gap);
+    return { a: +a.toFixed(10), b: +b.toFixed(10) };
+  }
+
+  // Tap, hold and double tap on the icon or name run Home Assistant actions (default: more info)
+  _bindActions() {
+    [this._el.icon, this._el.name].forEach((n) => {
+      const stop = () => clearTimeout(this._holdTimer);
+      n.addEventListener('pointerdown', () => {
+        this._held = false;
+        stop();
+        this._holdTimer = setTimeout(() => { this._held = true; this._act('hold'); }, 500);
+      });
+      n.addEventListener('pointerup', stop);
+      n.addEventListener('pointerleave', stop);
+      n.addEventListener('click', () => {
+        if (this._held) return;
+        if (!this._config.double_tap_action) { this._act('tap'); return; }
+        if (this._tapTimer) { clearTimeout(this._tapTimer); this._tapTimer = null; this._act('double_tap'); return; }
+        this._tapTimer = setTimeout(() => { this._tapTimer = null; this._act('tap'); }, 250);
+      });
+    });
+  }
+
+  _act(action) {
+    const c = this._config;
+    const config = {
+      entity: c.start_entity,
+      tap_action: c.tap_action || { action: 'more-info' },
+      hold_action: c.hold_action || { action: 'more-info' },
+      double_tap_action: c.double_tap_action,
+    };
+    if (!config[`${action}_action`]) return;
+    fireEvent(this, 'hass-action', { config, action });
   }
 
   _pointerDown(e) {
@@ -423,7 +483,7 @@ class RangeSliderCard extends HTMLElement {
     this._error = '';
 
     const move = (ev) => {
-      cur[which] = this._clamp(kind, which, valueAt(ev), cur);
+      Object.assign(cur, this._move(kind, which, valueAt(ev), cur));
       this._local = { ...cur, until: Infinity };
       this._update();
     };
@@ -451,7 +511,7 @@ class RangeSliderCard extends HTMLElement {
     e.preventDefault();
     (which === 'a' ? this._el.ta : this._el.tb).classList.add('kbd'); // ring and bubble for keyboard use
     const cur = { ...this._values(kind) };
-    cur[which] = this._clamp(kind, which, cur[which] + steps * r.step, cur);
+    Object.assign(cur, this._move(kind, which, cur[which] + steps * r.step, cur));
     this._local = { ...cur, until: Infinity };
     this._update();
     clearTimeout(this._keyTimer);
@@ -490,32 +550,59 @@ class RangeSliderCardEditor extends HTMLElement {
     const numeric = kind === 'number' && !FORMATS[fmt]?.minutes;
     const entity = { entity: { domain: ENTITY_DOMAINS } };
     const bound = kind === 'date' ? { date: {} } : { number: { mode: 'box', step: 'any' } };
+    const yesNo = (name) => ({ name, selector: { boolean: {} } });
+    const select = (name, options, mode = 'dropdown') => ({ name, selector: { select: { mode, options } } });
+    const action = (name) => ({ name, selector: { ui_action: { default_action: name === 'double_tap_action' ? 'none' : 'more-info' } } });
+    // Sections fold open and closed, like the editor of Home Assistant's own tile card
     return [
       { name: 'start_entity', required: true, selector: entity },
       { name: 'end_entity', required: true, selector: entity },
-      { name: 'name', selector: { text: {} } },
       {
-        type: 'grid', name: '', schema: [
-          { name: 'format', selector: { select: { mode: 'dropdown', options: this._formatOptions() } } },
-          ...(numeric ? [{ name: 'unit', selector: { text: {} } }] : []),
+        name: 'content', type: 'expandable', flatten: true, title: 'Content', icon: 'mdi:text-short',
+        schema: [
+          { name: 'name', selector: { text: {} } },
+          {
+            type: 'grid', name: '', schema: [
+              { name: 'icon', selector: { icon: {} }, context: { icon_entity: 'start_entity' } },
+              yesNo('show_icon'),
+            ],
+          },
+          {
+            type: 'grid', name: '', schema: [
+              { name: 'format', selector: { select: { mode: 'dropdown', options: this._formatOptions() } } },
+              ...(numeric ? [{ name: 'unit', selector: { text: {} } }] : []),
+            ],
+          },
+          {
+            type: 'grid', name: '', schema: [
+              select('position', [
+                { value: 'header', label: 'Next to the name' },
+                { value: 'below', label: 'Below the slider' },
+              ]),
+              select('show', [
+                { value: 'both', label: 'Both values' },
+                { value: 'low', label: 'Start value only' },
+                { value: 'high', label: 'End value only' },
+                { value: 'none', label: 'No values' },
+              ]),
+            ],
+          },
+          yesNo('small'),
         ],
       },
-      { name: 'icon', selector: { icon: {} }, context: { icon_entity: 'start_entity' } },
       {
-        name: 'style',
-        selector: { select: { mode: 'box', options: [
-          { value: 'standard', label: 'Standard' },
-          { value: 'gradient', label: 'Gradient' },
-        ] } },
-      },
-      {
-        type: 'grid', name: '', schema: [
-          { name: 'color', selector: { ui_color: { default_color: 'primary' } } },
-          ...(c.style === 'gradient' ? [{ name: 'color_end', selector: { ui_color: { default_color: 'primary' } } }] : []),
-        ],
-      },
-      {
-        type: 'expandable', name: '', title: 'Range', schema: [
+        name: 'slider', type: 'expandable', flatten: true, title: 'Slider', icon: 'mdi:tune-variant',
+        schema: [
+          select('style', [
+            { value: 'standard', label: 'Standard' },
+            { value: 'gradient', label: 'Gradient' },
+          ], 'box'),
+          {
+            type: 'grid', name: '', schema: [
+              { name: 'color', selector: { ui_color: { default_color: 'primary' } } },
+              ...(c.style === 'gradient' ? [{ name: 'color_end', selector: { ui_color: { default_color: 'primary' } } }] : []),
+            ],
+          },
           {
             type: 'grid', name: '', schema: [
               { name: 'min', selector: bound },
@@ -524,14 +611,12 @@ class RangeSliderCardEditor extends HTMLElement {
               { name: 'min_gap', selector: { number: { mode: 'box', step: 'any' } } },
             ],
           },
+          { type: 'grid', name: '', schema: [yesNo('push'), yesNo('show_scale'), yesNo('show_ticks')] },
         ],
       },
       {
-        type: 'grid', name: '', schema: [
-          { name: 'show_scale', selector: { boolean: {} } },
-          { name: 'show_ticks', selector: { boolean: {} } },
-          { name: 'show_icon', selector: { boolean: {} } },
-        ],
+        name: 'interactions', type: 'expandable', flatten: true, title: 'Interactions', icon: 'mdi:gesture-tap',
+        schema: [action('tap_action'), action('hold_action'), action('double_tap_action')],
       },
     ];
   }
@@ -557,6 +642,13 @@ class RangeSliderCardEditor extends HTMLElement {
         show_scale: 'Show scale labels',
         show_ticks: 'Show ruler ticks',
         show_icon: 'Show icon',
+        position: 'Values',
+        show: 'Which values',
+        small: 'Small value text',
+        push: 'A handle pushes the other one',
+        tap_action: 'Tap on icon or name',
+        hold_action: 'Hold on icon or name',
+        double_tap_action: 'Double tap on icon or name',
       }[s.name] ?? s.name);
       this._form.computeHelper = (s) => {
         const kind = this._kind();
@@ -567,6 +659,7 @@ class RangeSliderCardEditor extends HTMLElement {
           max: kind === 'date' ? 'Empty = 31 December this year' : minutes ? 'Minutes; empty = 1440 (24:00)' : 'Empty = from the entity',
           step: kind === 'date' ? 'Days (default 1)' : minutes ? 'Minutes (default 15)' : undefined,
           min_gap: 'At least one step; rounded to whole steps (default: one step)',
+          push: 'Off: a handle stops at the other one',
         }[s.name];
       };
       this._form.addEventListener('value-changed', (e) => {

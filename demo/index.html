@@ -60,6 +60,7 @@
     { start_entity: 'input_number.price_lo', end_entity: 'input_number.price_hi', name: 'Cheap power', format: 'currency', unit: 'Kč/kWh' },
     { start_entity: 'number.run_min', end_entity: 'number.run_max', name: 'Pump run', format: 'duration', style: 'gradient', color: 'indigo', color_end: 'light-blue' },
     { start_entity: 'input_datetime.trip_from', end_entity: 'date.trip_to', name: 'Holiday', style: 'gradient', color: 'green', color_end: 'lime' },
+    { start_entity: 'input_number.flow_min', end_entity: 'input_number.flow_max', name: 'Below, small, push', position: 'below', small: true, push: true, min_gap: 5, show_scale: false },
     { start_entity: 'input_number.flow_min', end_entity: 'sensor.bad', name: 'Wrong pair' },
   ];
   for (const cfg of configs) {
@@ -70,6 +71,7 @@
     cards.push(el);
   }
   window._cards = cards;
+  document.addEventListener('hass-action', (e) => log(`hass-action ${e.detail.action} → ${JSON.stringify(e.detail.config[e.detail.action + '_action'])}`));
   window._states = states;
 </script>
 </body>
